@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/gocomet.db
+.streamlit/secrets.toml
+
+# Internal strategy / planning notes — not part of the deliverable.
+Assignment.md
+PR_Handover_OnePager.md
