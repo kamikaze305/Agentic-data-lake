@@ -9,7 +9,9 @@
 
 A trade operations team runs on two bodies of information, and cannot use either one well.
 
-**The warehouse they can't ask.** Shipment, carrier and cost data sits in a lake that only an analyst can query. An ops lead who wants to know which lane is slipping files a request and waits. The cost isn't the wait — it's that **the second question never gets asked.** By the time the chart arrives, the follow-up ("was that only ocean freight?") costs another round trip, so it gets dropped. Decisions get made on the first answer, not the right one.
+
+**The warehouse too technical to access** 1. Wait for the analyst to send report and by the time it arrives, it is too late to ask second level questions. 
+2. Sit with the analyst and wait for them to execute what you are looking for. 
 
 **The documents nobody has ever queried.** The other half of the truth is in PDFs — commercial invoices, bills of lading, packing lists, certificates of origin. Every field on them is read by a human, once, under time pressure, and then never enters a queryable system. Nobody can ask "what weight did we actually declare last month" because that number has never been data. It has only ever been ink.
 
