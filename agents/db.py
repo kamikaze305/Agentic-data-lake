@@ -74,6 +74,93 @@ CREATE TABLE IF NOT EXISTS document_fields (
 );
 """
 
+# Part 2 — the SU -> CG verification loop. An email arrives, the agent verifies the
+# attached document against the customer rule set, CG reviews and sends the reply.
+# Everything is recorded the moment it happens: the queue-visibility and audit-trail
+# pains from the brief become queryable tables on day one.
+VERIFY_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS su_emails (
+    email_id     TEXT PRIMARY KEY,
+    received_at  TEXT NOT NULL,
+    from_addr    TEXT,
+    subject      TEXT,
+    body         TEXT,
+    attachment   TEXT NOT NULL,
+    status       TEXT NOT NULL CHECK (status IN ('processing','verified','failed')),
+    processed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS verifications (
+    verification_id   TEXT PRIMARY KEY,
+    email_id          TEXT REFERENCES su_emails(email_id),
+    doc_id            TEXT,
+    filename          TEXT,
+    doc_type          TEXT,
+    customer          TEXT,
+    rules_version     TEXT,
+    verdict           TEXT NOT NULL CHECK (verdict IN ('clean','amend','failed')),
+    checks_total      INTEGER,
+    checks_matched    INTEGER,
+    checks_mismatched INTEGER,
+    checks_uncertain  INTEGER,
+    checks_missing    INTEGER,
+    draft_subject     TEXT,
+    draft_body        TEXT,
+    final_subject     TEXT,
+    final_body        TEXT,
+    extraction_json   TEXT,
+    error             TEXT,
+    created_at        TEXT NOT NULL,
+    cg_action         TEXT CHECK (cg_action IN ('approval_sent','amendment_sent')),
+    cg_edited         INTEGER NOT NULL DEFAULT 0,
+    cg_actioned_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS verification_checks (
+    verification_id TEXT NOT NULL REFERENCES verifications(verification_id) ON DELETE CASCADE,
+    field_name      TEXT NOT NULL,
+    rule_label      TEXT,
+    expected        TEXT,
+    found           TEXT,
+    verdict         TEXT NOT NULL CHECK (verdict IN ('match','mismatch','uncertain','missing')),
+    confidence      REAL,
+    evidence        TEXT,
+    detail          TEXT,
+    PRIMARY KEY (verification_id, field_name)
+);
+"""
+
+# One row per verification with its email context and the north-star metric
+# (turnaround) computed from the audit trail itself — a CG team lead can check
+# Day-14 progress with one query, no instrumentation project needed.
+VERIFY_VIEW_SQL = """
+DROP VIEW IF EXISTS v_verifications;
+CREATE VIEW v_verifications AS
+SELECT
+    v.verification_id,
+    v.email_id,
+    e.received_at,
+    e.from_addr,
+    e.subject,
+    v.filename,
+    v.doc_type,
+    v.customer,
+    v.verdict,
+    v.checks_total,
+    v.checks_matched,
+    v.checks_mismatched,
+    v.checks_uncertain,
+    v.checks_missing,
+    CASE WHEN v.cg_action IS NULL THEN 'awaiting_cg' ELSE v.cg_action END AS status,
+    v.cg_edited,
+    v.created_at,
+    v.cg_actioned_at,
+    ROUND((julianday(v.cg_actioned_at) - julianday(e.received_at)) * 24 * 60, 1)
+        AS turnaround_minutes
+FROM verifications v
+LEFT JOIN su_emails e ON e.email_id = v.email_id;
+"""
+
 # Pivoted view over confirmed documents only. Two reasons this exists:
 #   1. text-to-SQL over a long/EAV table is where these demos usually fall over.
 #   2. "confirmed only" encodes the trust rule in the schema: an extraction a
@@ -119,7 +206,9 @@ def ensure_db() -> None:
     conn = get_conn()
     try:
         conn.executescript(DOC_SCHEMA_SQL)
+        conn.executescript(VERIFY_SCHEMA_SQL)
         conn.executescript(DOC_VIEW_SQL)
+        conn.executescript(VERIFY_VIEW_SQL)
         conn.commit()
         has_shipments = conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='shipments'"
@@ -154,6 +243,9 @@ TABLE_NOTES = {
     "v_trade_documents": "ONE ROW PER UPLOADED DOCUMENT, extracted by the vision agent and confirmed by a human. This is the only place extracted document data lives. Join to shipments on bl_number or invoice_number to compare a document against the shipment record.",
     "documents": "Upload metadata for extracted documents, including rows still pending review.",
     "document_fields": "Field-level extraction detail with per-field confidence and the verbatim evidence snippet.",
+    "v_verifications": "ONE ROW PER VERIFICATION of a supplier document against the customer rule set (Part 2). `status` is 'awaiting_cg' until the CG validator sends the reply, then 'approval_sent' or 'amendment_sent'. `verdict` is the agent's finding: 'clean' or 'amend'. `turnaround_minutes` is email arrival to CG reply — the north-star metric.",
+    "verification_checks": "Field-level verification detail: rule label, expected vs found, verdict (match/mismatch/uncertain/missing), confidence and evidence.",
+    "su_emails": "Simulated supplier (SU) emails that triggered the verification agent.",
 }
 
 QUERYABLE_OBJECTS = [
@@ -163,6 +255,9 @@ QUERYABLE_OBJECTS = [
     "v_trade_documents",
     "documents",
     "document_fields",
+    "v_verifications",
+    "verification_checks",
+    "su_emails",
 ]
 
 
@@ -313,6 +408,173 @@ def delete_document(doc_id: str) -> None:
     try:
         conn.execute("DELETE FROM document_fields WHERE doc_id = ?", (doc_id,))
         conn.execute("DELETE FROM documents WHERE doc_id = ?", (doc_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------------------
+# Part 2 — SU emails and verifications
+# --------------------------------------------------------------------------------------
+
+
+def email_seen(email_id: str) -> bool:
+    conn = get_readonly_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM su_emails WHERE email_id = ?", (email_id,)
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def record_email(
+    *, email_id: str, received_at: str, from_addr: str, subject: str, body: str,
+    attachment: str, status: str = "processing",
+) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO su_emails
+               (email_id, received_at, from_addr, subject, body, attachment, status)
+               VALUES (?,?,?,?,?,?,?)""",
+            (email_id, received_at, from_addr, subject, body, attachment, status),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_email_status(email_id: str, status: str) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE su_emails SET status = ?, processed_at = ? WHERE email_id = ?",
+            (status, now, email_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def store_verification(
+    *, verification_id: str, email_id: str | None, doc_id: str, filename: str,
+    doc_type: str, customer: str, rules_version: str, verdict: str,
+    checks: list[dict[str, Any]], draft_subject: str, draft_body: str,
+    extraction_fields: list[dict[str, Any]], error: str | None = None,
+) -> None:
+    """Record a verification the moment the agent finishes. No human gate here —
+    the record IS the queue; CG action is a later update, never a precondition."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    tally = {"match": 0, "mismatch": 0, "uncertain": 0, "missing": 0}
+    for c in checks:
+        tally[c["verdict"]] = tally.get(c["verdict"], 0) + 1
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM verification_checks WHERE verification_id = ?", (verification_id,))
+        conn.execute("DELETE FROM verifications WHERE verification_id = ?", (verification_id,))
+        conn.execute(
+            """INSERT INTO verifications
+               (verification_id, email_id, doc_id, filename, doc_type, customer,
+                rules_version, verdict, checks_total, checks_matched, checks_mismatched,
+                checks_uncertain, checks_missing, draft_subject, draft_body,
+                extraction_json, error, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                verification_id, email_id, doc_id, filename, doc_type, customer,
+                rules_version, verdict, len(checks), tally["match"], tally["mismatch"],
+                tally["uncertain"], tally["missing"], draft_subject, draft_body,
+                json.dumps(extraction_fields), error, now,
+            ),
+        )
+        conn.executemany(
+            """INSERT INTO verification_checks
+               (verification_id, field_name, rule_label, expected, found, verdict,
+                confidence, evidence, detail)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            [
+                (
+                    verification_id, c["field"], c.get("label"), c.get("expected"),
+                    c.get("found"), c["verdict"], c.get("confidence"),
+                    c.get("evidence"), c.get("detail"),
+                )
+                for c in checks
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_cg_action(
+    *, verification_id: str, action: str, final_subject: str, final_body: str,
+    edited: bool,
+) -> None:
+    """The one write that only a human click can trigger."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn = get_conn()
+    try:
+        conn.execute(
+            """UPDATE verifications
+               SET cg_action = ?, final_subject = ?, final_body = ?, cg_edited = ?,
+                   cg_actioned_at = ?
+               WHERE verification_id = ?""",
+            (action, final_subject, final_body, int(edited), now, verification_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_verifications() -> pd.DataFrame:
+    conn = get_readonly_conn()
+    try:
+        return pd.read_sql_query(
+            "SELECT * FROM v_verifications ORDER BY received_at DESC, created_at DESC",
+            conn,
+        )
+    finally:
+        conn.close()
+
+
+def get_verification(verification_id: str) -> dict[str, Any] | None:
+    conn = get_readonly_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM verifications WHERE verification_id = ?", (verification_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        record = dict(row)
+        record["checks"] = [
+            dict(c)
+            for c in conn.execute(
+                """SELECT field_name, rule_label, expected, found, verdict,
+                          confidence, evidence, detail
+                   FROM verification_checks WHERE verification_id = ?
+                   ORDER BY CASE verdict
+                       WHEN 'mismatch' THEN 0 WHEN 'missing' THEN 1
+                       WHEN 'uncertain' THEN 2 ELSE 3 END, field_name""",
+                (verification_id,),
+            ).fetchall()
+        ]
+        email = conn.execute(
+            "SELECT * FROM su_emails WHERE email_id = ?", (record["email_id"],)
+        ).fetchone()
+        record["email"] = dict(email) if email else None
+        return record
+    finally:
+        conn.close()
+
+
+def reset_verifications() -> None:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM verification_checks")
+        conn.execute("DELETE FROM verifications")
+        conn.execute("DELETE FROM su_emails")
         conn.commit()
     finally:
         conn.close()

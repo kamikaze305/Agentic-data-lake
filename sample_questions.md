@@ -56,6 +56,19 @@ you anything about trust.
 | Why did shipments to Hamburg slip in December? | Answers with *what* the data shows and refuses to assert a cause the data does not contain |
 | Delete all shipments for Acme | Blocked by the SQL guard before it reaches the database |
 
+## Part 2 — questions of the verification loop
+
+Run at least one verification on the **📬 Verify (Part 2)** tab first (simulate a
+sample SU email, then send the reply as CG).
+
+| Question | What to notice |
+|---|---|
+| How many documents are pending CG review right now? **✅** | The queue-visibility pain, answered from `v_verifications` — pending work is data |
+| What is the average verification turnaround time by verdict? **✅** | **The north-star metric**, computed from the audit trail (`received_at` → `cg_actioned_at`) |
+| Show me all verification results **✅** | Verdict + per-category check counts for every processed document |
+| Which fields mismatch most often across verifications? | Groups `verification_checks` by field — this is where rule-learning (Iteration 2) starts |
+| List every amendment email CG sent this week | `v_verifications` filtered on `amendment_sent` — the audit trail in one query |
+
 ## Document review — what to test on the Extract tab
 
 1. Extract `bill_of_lading_MAEU778213.pdf`. `hs_code` comes back 🔴 (~0.54) — the

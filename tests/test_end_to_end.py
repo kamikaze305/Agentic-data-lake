@@ -156,7 +156,7 @@ def test_ui_renders() -> None:
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=90)
     at.run()
     check("app.py runs without an exception", not at.exception, str(at.exception)[:200])
-    check("all four tabs render", len(at.tabs) == 4, f"{len(at.tabs)} tabs")
+    check("all five tabs render", len(at.tabs) == 5, f"{len(at.tabs)} tabs")
 
     sample = next((b for b in at.button if "amendment" in (b.label or "")), None)
     check("sample question buttons are present", sample is not None)
