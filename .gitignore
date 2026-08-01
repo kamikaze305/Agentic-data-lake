@@ -17,3 +17,6 @@ cg_outbox/
 # Internal planning / PM docs — not part of the deliverable.
 approach_part2.md
 PM_Decision_Log.docx
+
+# Word owner/lock files, created while a .docx is open.
+~$*
