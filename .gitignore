@@ -9,3 +9,11 @@ data/gocomet.db
 # Internal strategy / planning notes — not part of the deliverable.
 Assignment.md
 PR_Handover_OnePager.md
+
+# Part 2 runtime state — the simulated mailbox and CG outbox fill at demo time.
+su_inbox/
+cg_outbox/
+
+# Internal planning / PM docs — not part of the deliverable.
+approach_part2.md
+PM_Decision_Log.docx

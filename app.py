@@ -1,8 +1,14 @@
-"""GoComet Agentic Data Lake — Part 1 POC.
+"""GoComet Agentic Data Lake — Part 1 + Part 2 POC.
 
-Flow A  Ask a question of the shipment data lake.
-Flow B  Upload a trade document, review what the agent extracted, store it.
-Flow C  Ask a question of the data that document just created — same agent, same store.
+Part 1
+    Flow A  Ask a question of the shipment data lake.
+    Flow B  Upload a trade document, review what the agent extracted, store it.
+    Flow C  Ask a question of the data that document just created — same agent, same store.
+
+Part 2
+    Flow V  An SU email arrives → the agent extracts the attached trade document,
+            compares it against the customer rule set, flags every discrepancy and
+            drafts the reply. The CG validator reviews and sends. The agent never sends.
 
 Run:  streamlit run app.py
 """
@@ -18,7 +24,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from agents import analytics_agent, config, db, vision_agent
+from agents import analytics_agent, config, db, verification_agent, vision_agent
 from agents.llm import DEFAULT_MODEL, demo_mode
 from agents.vision_agent import HIGH, MEDIUM
 
@@ -31,7 +37,21 @@ SAMPLE_QUESTIONS = [
     "What is the customs hold rate by commodity?",
     "Show me the total declared weight and value across all uploaded documents",
     "Do the uploaded documents match our shipment records on weight and consignee?",
+    "How many documents are pending CG review right now?",
+    "What is the average verification turnaround time by verdict?",
 ]
+
+VERDICT_BADGE = {
+    "match": "✅ matched",
+    "mismatch": "❌ mismatch",
+    "uncertain": "🟠 uncertain",
+    "missing": "⬜ missing",
+}
+STATUS_BADGE = {
+    "awaiting_cg": "📥 awaiting CG",
+    "approval_sent": "✅ approval sent",
+    "amendment_sent": "✉️ amendment sent",
+}
 
 
 # --------------------------------------------------------------------------------------
@@ -51,6 +71,9 @@ for key, default in [
     ("pending_question", None),
     ("extraction", None),
     ("last_stored", None),
+    ("verify_traces", {}),
+    ("selected_verification", None),
+    ("last_sent", None),
 ]:
     st.session_state.setdefault(key, default)
 
@@ -71,7 +94,10 @@ def confidence_badge(value: float | None) -> str:
 
 with st.sidebar:
     st.markdown("### 🚢 GoComet Agentic Data Lake")
-    st.caption("Part 1 POC · agentic analytics + vision extraction, one store")
+    st.caption(
+        "Part 1 · analytics + vision extraction — Part 2 · SU→CG document "
+        "verification. One agentic system, one store."
+    )
 
     if demo_mode():
         st.error(
@@ -97,7 +123,8 @@ with st.sidebar:
     c2.metric("Documents", f"{counts.get('documents', 0):,}")
     st.caption(
         f"{counts.get('v_trade_documents', 0)} confirmed document(s) queryable · "
-        f"{counts.get('document_fields', 0)} extracted fields"
+        f"{counts.get('document_fields', 0)} extracted fields · "
+        f"{counts.get('v_verifications', 0)} verification(s) on record"
     )
 
     with st.expander("Reset"):
@@ -108,6 +135,14 @@ with st.sidebar:
             st.rerun()
         if st.button("Clear conversation", width="stretch"):
             st.session_state.turns = []
+            st.rerun()
+        if st.button("Clear verifications & inbox", width="stretch"):
+            db.reset_verifications()
+            for f in config.su_inbox().iterdir():
+                if f.is_file():
+                    f.unlink()
+            st.session_state.verify_traces = {}
+            st.session_state.selected_verification = None
             st.rerun()
 
 
@@ -220,9 +255,274 @@ def render_result(result: analytics_agent.AnalyticsResult) -> None:
 # Tabs
 # --------------------------------------------------------------------------------------
 
-tab_ask, tab_extract, tab_docs, tab_about = st.tabs(
-    ["💬  Ask the data lake", "📄  Extract a document", "🗂️  Stored documents", "🧭  How it works"]
+tab_verify, tab_ask, tab_extract, tab_docs, tab_about = st.tabs(
+    [
+        "📬  Verify (Part 2)",
+        "💬  Ask the data lake",
+        "📄  Extract a document",
+        "🗂️  Stored documents",
+        "🧭  How it works",
+    ]
 )
+
+
+# ---- Flow V (Part 2) — the SU → CG verification loop ---------------------------------
+with tab_verify:
+    ruleset = verification_agent.load_rules()
+    st.markdown("#### CG verification inbox")
+    st.caption(
+        f"Customer rule set: **{ruleset['customer']}** · v{ruleset['version']} · "
+        "When an SU email arrives, the agent reads the attached document, compares "
+        "every field against the rules, and drafts the reply. **You review. You "
+        "send. The agent has no send button.**"
+    )
+
+    ctrl_check, ctrl_pick, ctrl_sim = st.columns([1.2, 2.4, 1.4])
+    with ctrl_check:
+        check_now = st.button("📥 Check inbox now", type="primary", width="stretch")
+    samples = verification_agent.list_sample_emails()
+    with ctrl_pick:
+        chosen_sample = st.selectbox(
+            "Sample SU email",
+            [p.name for p in samples],
+            label_visibility="collapsed",
+            help="Bundled SU emails covering a clean pass, an HS-code mismatch and "
+                 "an incomplete document.",
+        ) if samples else None
+    with ctrl_sim:
+        simulate = st.button("✉️ Simulate this SU email arriving", width="stretch")
+
+    if simulate and chosen_sample:
+        picked = next(p for p in samples if p.name == chosen_sample)
+        verification_agent.simulate_email_arrival(picked)
+        check_now = True
+
+    if check_now:
+        with st.spinner("Trigger → extract → compare → flag → draft…"):
+            new_results = verification_agent.check_inbox_and_process()
+        for r in new_results:
+            st.session_state.verify_traces[r.verification_id] = r.trace
+        if new_results:
+            st.session_state.selected_verification = new_results[0].verification_id
+            st.toast(f"{len(new_results)} new document(s) verified")
+        else:
+            st.toast("No new SU emails in the inbox.")
+
+    st.caption(
+        f"Watched folder: `{config.su_inbox()}` — drop an email envelope (.json) or a "
+        "bare PDF/image there and hit *Check inbox now*. The email plumbing is "
+        "simulated; the trigger logic is real."
+    )
+
+    queue = db.list_verifications()
+
+    # ---- State 1 · Incoming ----------------------------------------------------------
+    st.markdown("##### 📨 Incoming")
+    if queue.empty:
+        st.info(
+            "No SU emails yet. Pick a sample above and click **Simulate this SU "
+            "email arriving** — the agent will wake up, read the attachment and "
+            "verify it while you watch."
+        )
+    else:
+        incoming = queue.assign(
+            status_badge=queue["status"].map(STATUS_BADGE).fillna(queue["status"]),
+            verdict_badge=queue["verdict"].map(
+                {"clean": "✅ clean", "amend": "❌ needs amendment", "failed": "🚨 failed"}
+            ),
+        )[
+            ["verification_id", "received_at", "from_addr", "subject", "filename",
+             "verdict_badge", "status_badge"]
+        ].rename(
+            columns={
+                "verification_id": "ID", "received_at": "Received", "from_addr": "From",
+                "subject": "Subject", "filename": "Attachment",
+                "verdict_badge": "Agent verdict", "status_badge": "Status",
+            }
+        )
+        st.dataframe(incoming, width="stretch", hide_index=True,
+                     height=45 + 35 * min(len(incoming), 5))
+
+        options = queue["verification_id"].tolist()
+        default_index = (
+            options.index(st.session_state.selected_verification)
+            if st.session_state.selected_verification in options
+            else 0
+        )
+        chosen_ver = st.selectbox(
+            "Open a verification",
+            options,
+            index=default_index,
+            format_func=lambda vid: (
+                f"{vid} · "
+                f"{queue.set_index('verification_id').loc[vid, 'filename']} · "
+                f"{queue.set_index('verification_id').loc[vid, 'verdict']}"
+            ),
+        )
+        st.session_state.selected_verification = chosen_ver
+        record = db.get_verification(chosen_ver)
+
+        if record is not None:
+            checks = record["checks"]
+            email_meta = record.get("email") or {}
+            st.divider()
+
+            # ---- State 2 · Verification result ---------------------------------------
+            st.markdown("##### 🔎 Verification result")
+            if record["verdict"] == "failed":
+                st.error(
+                    f"**The agent could not process this document.** {record['error'] or ''} "
+                    "Nothing was approved and no reply was drafted — this one needs "
+                    "the manual path."
+                )
+            else:
+                n_bad = (
+                    record["checks_mismatched"]
+                    + record["checks_uncertain"]
+                    + record["checks_missing"]
+                )
+                if record["verdict"] == "clean":
+                    st.success(
+                        f"**All {record['checks_total']} checks matched** against "
+                        f"{record['customer']}'s requirements. An approval draft is "
+                        "ready below — nothing goes out until you send it."
+                    )
+                else:
+                    st.error(
+                        f"**{n_bad} of {record['checks_total']} checks need attention** "
+                        f"({record['checks_mismatched']} mismatch · "
+                        f"{record['checks_missing']} missing · "
+                        f"{record['checks_uncertain']} uncertain). An amendment draft "
+                        "listing each issue is ready below."
+                    )
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Matched", record["checks_matched"])
+                m2.metric("Mismatched", record["checks_mismatched"])
+                m3.metric("Missing", record["checks_missing"])
+                m4.metric("Uncertain", record["checks_uncertain"])
+
+                check_table = pd.DataFrame(
+                    [
+                        {
+                            "Field": c["field_name"],
+                            "Verdict": VERDICT_BADGE.get(c["verdict"], c["verdict"]),
+                            "Found on document": c["found"] or "—",
+                            "Customer requires": c["expected"] or "—",
+                            "Confidence": confidence_badge(c["confidence"]),
+                            "Evidence (quoted)": c["evidence"] or "—",
+                        }
+                        for c in checks
+                    ]
+                )
+                st.dataframe(check_table, width="stretch", hide_index=True,
+                             height=45 + 35 * min(len(check_table), 12))
+                st.caption(
+                    "Verdicts are deterministic rule checks — no model judgment. An "
+                    "**uncertain** field counts against approval exactly like a "
+                    "mismatch: the agent never silently approves what it could not read."
+                )
+
+                # ---- State 3 · Discrepancy detail ------------------------------------
+                flagged = [c for c in checks if c["verdict"] != "match"]
+                if flagged:
+                    st.markdown("##### 🚩 Discrepancy detail")
+                    picked_field = st.selectbox(
+                        "Flagged field",
+                        [c["field_name"] for c in flagged],
+                        format_func=lambda name: (
+                            f"{name} — "
+                            f"{next(c['verdict'] for c in flagged if c['field_name'] == name)}"
+                        ),
+                    )
+                    detail = next(c for c in flagged if c["field_name"] == picked_field)
+                    d1, d2 = st.columns(2)
+                    with d1:
+                        st.markdown("**Found on the document**")
+                        st.markdown(f"### {detail['found'] or '— nothing —'}")
+                        st.caption(
+                            f"Extraction confidence {confidence_badge(detail['confidence'])} · "
+                            f"evidence: “{detail['evidence'] or 'no quotable evidence'}”"
+                        )
+                    with d2:
+                        st.markdown("**What the customer requires**")
+                        st.markdown(f"### {detail['expected']}")
+                        st.caption(detail["rule_label"] or "")
+                    if detail["detail"]:
+                        st.warning(detail["detail"])
+
+                # ---- State 4 · Draft reply -------------------------------------------
+                st.markdown("##### ✉️ Draft reply to SU")
+                already_sent = record["cg_action"] is not None
+                if already_sent:
+                    st.success(
+                        f"Sent by the CG validator at {record['cg_actioned_at']} "
+                        f"({STATUS_BADGE.get(record['cg_action'], record['cg_action'])}"
+                        f"{', edited before sending' if record['cg_edited'] else ', sent as drafted'})."
+                    )
+                    st.text_input("Subject", value=record["final_subject"] or "",
+                                  disabled=True, key=f"subj_sent_{chosen_ver}")
+                    st.text_area("Body", value=record["final_body"] or "", height=280,
+                                 disabled=True, key=f"body_sent_{chosen_ver}")
+                else:
+                    st.caption(
+                        f"To: **{email_meta.get('from_addr', 'supplier')}** · Drafted from "
+                        "the check table above — the email cannot claim anything the "
+                        "comparator did not record. Edit anything, then send."
+                    )
+                    subj = st.text_input("Subject", value=record["draft_subject"] or "",
+                                         key=f"subj_{chosen_ver}")
+                    body = st.text_area("Body", value=record["draft_body"] or "",
+                                        height=280, key=f"body_{chosen_ver}")
+                    send_col, note_col = st.columns([1, 2.5])
+                    if send_col.button("📤 Send reply (as CG)", type="primary",
+                                       key=f"send_{chosen_ver}"):
+                        outcome = verification_agent.cg_send(chosen_ver, subj, body)
+                        st.session_state.last_sent = outcome
+                        st.rerun()
+                    note_col.caption(
+                        "This button is the only send in the system, and it is yours. "
+                        "On approval the document also becomes queryable in the data "
+                        "lake; on amendment it is kept for audit only."
+                    )
+
+            trace = st.session_state.verify_traces.get(chosen_ver)
+            if trace:
+                with st.expander("Agent trace (trigger → extract → compare → draft)"):
+                    render_trace(trace)
+            fields_json = record.get("extraction_json")
+            if fields_json:
+                import json as _json
+
+                stored_fields = _json.loads(fields_json)
+                if stored_fields:
+                    with st.expander("Full extraction — Part 1 vision agent output"):
+                        st.dataframe(
+                            pd.DataFrame(
+                                [
+                                    {
+                                        "Field": f["name"],
+                                        "Value": f.get("value") or "—",
+                                        "Confidence": confidence_badge(f.get("confidence")),
+                                        "Evidence": f.get("evidence") or "—",
+                                    }
+                                    for f in stored_fields
+                                ]
+                            ),
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+    if st.session_state.last_sent:
+        sent = st.session_state.last_sent
+        st.success(
+            f"Reply sent ({sent['action'].replace('_', ' ')}"
+            f"{', edited' if sent['edited'] else ''}) and written to "
+            f"`{sent['outbox_file']}`. The verification is now part of the audit "
+            "trail — try asking the data lake *“What is the average verification "
+            "turnaround time by verdict?”*"
+        )
+        st.session_state.last_sent = None
 
 
 # ---- Flow A + C -----------------------------------------------------------------------
@@ -525,6 +825,31 @@ with tab_about:
 SQLite file the shipment data lives in, in the same field vocabulary. That is the
 whole of Flow C: no new agent, no new pipeline — a document uploaded ten seconds
 ago is joinable to a shipment booked last quarter.
+
+#### Part 2 — the same chain, pointed at a real workflow
+
+```
+  SU email arrives (watched folder)
+       ↓
+  TRIGGER      new envelope detected, processed exactly once
+       ↓
+  EXTRACTOR    Part 1 vision agent, unmodified (confidence + evidence per field)
+       ↓
+  COMPARATOR   deterministic checks vs the customer rule set (rules/*.json)
+               match / mismatch / uncertain / missing — no model in the verdict
+       ↓
+  DRAFTER      approval or amendment email, rendered FROM the check table
+       ↓
+  CG VALIDATOR reviews, edits, and sends — the only send in the system
+       ↓
+  One store    verifications + checks + emails → queryable via Flow A
+```
+
+The three-party workflow does not change: SU sends, CG validates, the customer
+receives one clean doc set. What disappears is the manual reading and typing —
+not the human. On approval the document enters `v_trade_documents`; every
+verification (pending or done) is queryable in `v_verifications`, which is where
+the north-star metric — turnaround from SU email to CG reply — lives.
 
 #### Trust, built in rather than bolted on
 

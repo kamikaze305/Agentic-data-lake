@@ -1,4 +1,4 @@
-# GoComet Agentic Data Lake — Part 1 POC
+# GoComet Agentic Data Lake — Part 1 + Part 2 POC
 
 Ask a logistics data lake questions in plain English. Drop in a trade document and
 have its fields extracted, reviewed and stored. Then ask questions about the data
@@ -11,6 +11,20 @@ A  "Which customers need the most document amendment cycles?"  → answer + SQL 
 B  drop in a Bill of Lading                                     → fields + confidence + evidence → you review → stored
 C  "Do the uploaded documents match our shipment records?"      → answer over data that did not exist 30 seconds ago
 ```
+
+**Part 2 points that chain at a real workflow** — the SU → CG document verification
+loop. An SU email arrives, the agent extracts the attached trade document (Part 1
+vision agent, unmodified), compares every field against the customer's rule set,
+flags mismatches and uncertainty, and drafts the reply. The CG validator reviews and
+sends — **the agent has no send button**. Verified output lands in the same store,
+so the Part 1 analytics layer can answer "how many documents are pending?" and
+"what's our verification turnaround?" from the audit trail itself.
+
+```
+V  SU email arrives → extract → compare vs rules → flag → draft → 👤 CG reviews & sends → queryable
+```
+
+See [PRD_Part2.md](PRD_Part2.md) (1 page) and [demo_script_part2.md](demo_script_part2.md).
 
 ---
 
@@ -46,8 +60,14 @@ documents are already in `sample_docs/`. Nothing else to download or configure.
 python tests/test_end_to_end.py
 ```
 
-34 checks covering all three flows, the SQL guard, the extraction rules, and a
-headless render of the app. No API key or network required.
+```bash
+python tests/test_verification.py
+```
+
+The first covers the Part 1 flows, the SQL guard, extraction rules and a headless
+render of the app; the second runs the entire Part 2 loop across all three scenarios
+(clean / mismatch / incomplete), the uncertain-never-approved rule, and the
+analytics linkage. No API key or network required for either.
 
 ---
 
@@ -65,6 +85,28 @@ headless render of the app. No API key or network required.
 | 8 | Back to **Ask** → *"Do the uploaded documents match our shipment records on weight and consignee?"* | **The chain.** The invoice declares 18,720 kg; the B/L and the ERP say 18,960 kg. A −240 kg discrepancy found by a question, not by a person reading a PDF. |
 
 Step 8 is the thing to watch. It is also the thing Part 2 automates.
+
+---
+
+## The 2-minute Part 2 demo path
+
+All of it works with or without an API key (demo mode replays the recorded
+extractions for the bundled `Testdocs/`; comparison, drafting and storage always run
+for real).
+
+| # | Do this | What to look at |
+|---|---------|-----------------|
+| 1 | **📬 Verify (Part 2)** tab → pick `su_email_2_hs_mismatch_bl.json` → **✉️ Simulate this SU email arriving** | The trigger fires: extract → compare → flag → draft, and the email appears in **Incoming** with a verdict. |
+| 2 | **Verification result** | ❌ 1 of 8 checks needs attention. Field-by-field verdicts with found vs required, confidence, and the quoted evidence. |
+| 3 | **Discrepancy detail** → `hs_code` | Found **1006.40**, customer requires **1006.30** — read at 95% confidence, so it's a confident mismatch, not a guess. |
+| 4 | **Draft reply** | The amendment email lists field / found / expected — rendered from the check table, so it cannot claim anything the checks didn't record. Edit it if you like. |
+| 5 | **📤 Send reply (as CG)** | The only send button in the system, and it's yours. The reply is written to `cg_outbox/`. |
+| 6 | Try `su_email_3_incomplete_invoice.json` | Missing and uncertain fields **block approval** — uncertain is never treated as approved. |
+| 7 | Try `su_email_1_clean_invoice.json` | All checks match → approval draft; on send, the document becomes queryable in `v_trade_documents`. |
+| 8 | **Ask the data lake** → *"What is the average verification turnaround time by verdict?"* | **The linkage.** Part 2's audit trail answered by Part 1's analytics agent — this is the north-star metric. |
+
+You can also drop any PDF/image or `.json` email envelope into `su_inbox/` and click
+**📥 Check inbox now** — the folder is the simulated mailbox.
 
 ---
 
@@ -119,6 +161,23 @@ extracted fields into a flat table filtered to `status = 'confirmed'`. Flow C ne
 new component: the planner sees that view in its schema like any other table, and can
 join it to `shipments` on `bl_number` or `invoice_number`.
 
+**Agent V — verification (Part 2)** ([agents/verification_agent.py](agents/verification_agent.py))
+- **Trigger** polls the simulated mailbox (`su_inbox/`) and processes each email
+  exactly once. The plumbing is mocked, per the brief; the activation logic is real.
+- **Extractor** is the Part 1 vision agent, called unmodified — perception only.
+- **Comparator** is deterministic: each field checked against the customer rule set
+  ([rules/sunpeak_foods.json](rules/sunpeak_foods.json)) → match / mismatch /
+  **uncertain** / missing. No model in the verdict path, so a verdict is always
+  auditable — and uncertain counts against approval exactly like a mismatch.
+- **Drafter** renders the approval or amendment email *from the check table*. It
+  cannot claim anything the comparator did not record, and it works without a key.
+- **CG send** (`cg_send`) is only reachable from the human's button in the UI. It
+  stamps the audit trail, writes the reply to `cg_outbox/`, and stores the document —
+  `confirmed` (queryable) on approval, `rejected` (audit-only) on amendment.
+- Every verification is recorded the moment it happens in `verifications` /
+  `verification_checks` / `su_emails`, exposed to the analytics agent via
+  `v_verifications` — including `turnaround_minutes`, the north-star metric.
+
 ---
 
 ## Trust and failure handling
@@ -134,6 +193,9 @@ join it to `shipments` on `bl_number` or `invoice_number`.
 | Unreviewed extractions leaking into answers | `v_trade_documents` filters to `confirmed` — enforced by the schema, not by convention |
 | Model down, quota gone, no key | Demo mode: real SQL, replayed extraction, labelled on every single response |
 | Answer text generated but query returned nothing | Explicit "zero rows — this is not a finding" warning |
+| **(P2)** A wrong field shown as approved | Verdicts are deterministic rule checks; a low-confidence read is `uncertain`, and uncertain blocks approval like a mismatch |
+| **(P2)** The amendment email claiming something false | The reply is rendered from the recorded check table — it cannot state what the comparator didn't find |
+| **(P2)** The agent emailing the supplier on its own | It can't. `cg_send` is only invoked by the CG validator's button; the "sent" artifact records the human action |
 
 Every answer shows its SQL. Every extracted field shows its confidence and its quote.
 Nothing uncertain is ever stored quietly.
@@ -158,19 +220,25 @@ requirement rather than an oversight:
 ## Repo map
 
 ```
-PRD.md                      The product reasoning behind this build (Deliverable 1)
-app.py                      Streamlit UI — the four flows
-agents/analytics_agent.py   Agent A: planner → executor → answerer → verifier + memory
-agents/vision_agent.py      Agent B: classifier → extractor → rule verifier → repair
-agents/db.py                The data lake: schema, read-only access, document storage
-agents/llm.py               Single Gemini entry point; typed failure, never a silent guess
-agents/mock.py              Demo mode: real SQL, replayed extraction, always labelled
-data/seed.py                Generates 421 shipments across 14 months (deterministic)
-tools/make_sample_docs.py   Generates the two sample trade documents
-tests/test_end_to_end.py    34 checks across A, B, C, guards and a headless UI render
-sample_docs/                Commercial Invoice + Bill of Lading for the same shipment
-sample_questions.md         Questions to try, including the ones designed to fail well
-demo_script.md              The 2-minute walkthrough
+PRD.md                        Part 1 product reasoning (Deliverable 1)
+PRD_Part2.md                  Part 2 PRD — one page, the SU → CG verification loop
+app.py                        Streamlit UI — Verify (Part 2) + the Part 1 flows
+agents/analytics_agent.py     Agent A: planner → executor → answerer → verifier + memory
+agents/vision_agent.py        Agent B: classifier → extractor → rule verifier → repair
+agents/verification_agent.py  Agent V: trigger → extract → compare → flag → draft (Part 2)
+agents/db.py                  The data lake: schema, read-only access, documents + verifications
+agents/llm.py                 Single Gemini entry point; typed failure, never a silent guess
+agents/mock.py                Demo mode: real SQL, replayed extractions, always labelled
+rules/sunpeak_foods.json      The customer rule set the comparator checks against
+data/seed.py                  Generates 421 shipments across 14 months (deterministic)
+tools/make_sample_docs.py     Generates the two sample trade documents
+tests/test_end_to_end.py      Part 1 checks across A, B, C, guards and a headless UI render
+tests/test_verification.py    Part 2 checks: all three scenarios, trust rules, linkage
+sample_docs/                  Commercial Invoice + Bill of Lading for the same shipment
+sample_emails/                Three SU emails: clean pass, HS mismatch, incomplete doc
+Testdocs/                     The trade documents those emails attach (T1 / T2 / T3)
+sample_questions.md           Questions to try, including the ones designed to fail well
+demo_script.md                Part 1 walkthrough · demo_script_part2.md — Part 2 (2 min)
 ```
 
 ## Troubleshooting

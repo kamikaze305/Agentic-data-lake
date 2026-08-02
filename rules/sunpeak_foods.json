@@ -1,0 +1,50 @@
+{
+  "customer": "Sunpeak Foods BV",
+  "customer_code": "SUNP",
+  "version": "2026-08-02.1",
+  "source": "Documentation requirements agreed with Sunpeak Foods BV (contracted lane: Nhava Sheva -> Rotterdam, Basmati rice programme). In production this file is owned by the CG team lead and versioned; the agent only ever reads it.",
+  "rules": [
+    {
+      "field": "consignee",
+      "check": "name",
+      "expected": "Sunpeak Foods BV",
+      "label": "Consignee must read 'Sunpeak Foods BV' (punctuation variants like 'B.V.' accepted)",
+      "applies_to": ["*"]
+    },
+    {
+      "field": "hs_code",
+      "check": "digits",
+      "expected": "1006.30",
+      "label": "HS code must be 1006.30 - semi-milled or wholly milled rice. Any other code risks a customs hold at Rotterdam.",
+      "applies_to": ["*"]
+    },
+    {
+      "field": "incoterm",
+      "check": "equals",
+      "expected": "CIF",
+      "label": "Contract terms are CIF Rotterdam - invoice must state CIF",
+      "applies_to": ["commercial_invoice"]
+    },
+    {
+      "field": "currency",
+      "check": "equals",
+      "expected": "USD",
+      "label": "Invoicing currency is USD per the purchase contract",
+      "applies_to": ["commercial_invoice"]
+    },
+    {
+      "field": "destination_port",
+      "check": "contains",
+      "expected": "Rotterdam",
+      "label": "Port of discharge must be Rotterdam",
+      "applies_to": ["*"]
+    },
+    {
+      "field": "origin_port",
+      "check": "contains",
+      "expected": "Nhava Sheva",
+      "label": "Contracted port of loading is Nhava Sheva - a different origin needs prior customer approval",
+      "applies_to": ["*"]
+    }
+  ]
+}

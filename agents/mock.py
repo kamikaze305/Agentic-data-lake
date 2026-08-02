@@ -27,6 +27,38 @@ DEMO_BANNER = (
 # (keywords that must all appear, label, SQL, chart spec)
 CANNED_QUERIES: list[tuple[list[str], str, str, dict[str, Any]]] = [
     (
+        ["pending"],
+        "Verification queue — documents awaiting CG action (Part 2)",
+        """SELECT verification_id, received_at, from_addr, filename, doc_type,
+       verdict, checks_mismatched, checks_uncertain, checks_missing
+FROM v_verifications
+WHERE status = 'awaiting_cg'
+ORDER BY received_at""",
+        {"type": "none"},
+    ),
+    (
+        ["turnaround"],
+        "Verification turnaround — SU email arrival to CG reply sent (north-star)",
+        """SELECT verdict,
+       COUNT(*) AS documents,
+       ROUND(AVG(turnaround_minutes), 1) AS avg_turnaround_minutes
+FROM v_verifications
+WHERE cg_actioned_at IS NOT NULL
+GROUP BY verdict""",
+        {"type": "bar", "x": "verdict", "y": "avg_turnaround_minutes",
+         "title": "Average verification turnaround (minutes)"},
+    ),
+    (
+        ["verification"],
+        "Verification outcomes by document (Part 2)",
+        """SELECT v.verification_id, v.filename, v.doc_type, v.verdict, v.status,
+       v.checks_total, v.checks_matched, v.checks_mismatched,
+       v.checks_uncertain, v.checks_missing, v.turnaround_minutes
+FROM v_verifications v
+ORDER BY v.received_at DESC""",
+        {"type": "none"},
+    ),
+    (
         ["delay"],
         "Average delay and late-shipment count by destination port",
         """SELECT destination_port,
@@ -241,14 +273,146 @@ _BL_FIELDS = [
 ]
 
 
+# --------------------------------------------------------------------------------------
+# Pre-recorded extractions for the Part 2 test scenarios in /Testdocs.
+# Values are transcribed from the actual documents so demo mode replays honestly:
+# T1 = clean pass, T2 = confident HS-code mismatch, T3 = missing + uncertain fields.
+# --------------------------------------------------------------------------------------
+
+_T1_INVOICE_FIELDS = [
+    ("invoice_number", "INV-TEST-001", 0.98, "Invoice No.: INV-TEST-001"),
+    ("invoice_date", "2026-06-22", 0.97, "Date: 22-Jun-2026"),
+    ("shipper", "Sunrise Agro Exports Pvt Ltd", 0.96, "EXPORTER Sunrise Agro Exports Pvt Ltd"),
+    ("consignee", "Sunpeak Foods BV", 0.95, "CONSIGNEE Sunpeak Foods BV"),
+    ("origin_port", "Nhava Sheva (INNSA)", 0.94, "PORT OF LOADING: Nhava Sheva (INNSA)"),
+    ("destination_port", "Rotterdam (NLRTM)", 0.94, "PORT OF DISCHARGE: Rotterdam (NLRTM)"),
+    ("incoterm", "CIF", 0.96, "TERMS OF DELIVERY: CIF Rotterdam"),
+    ("goods_description", "Indian Basmati Rice, 5% Broken, packed in 25 kg PP bags", 0.93,
+     "Indian Basmati Rice, 5% Broken, packed in 25 kg PP bags"),
+    ("hs_code", "1006.30", 0.95, "HS Code 1006.30"),
+    ("currency", "USD", 0.97, "CURRENCY: USD"),
+    ("total_amount", "44640.00", 0.95, "TOTAL INVOICE VALUE (CIF): USD 44,640.00"),
+    ("gross_weight_kg", "18720.00", 0.92, "Gross Weight: 18,720.00 KGS"),
+    ("net_weight_kg", "18000.00", 0.92, "Net Weight: 18,000.00 KGS"),
+    ("package_count", "720", 0.92, "Total Packages: 720 BAGS (Seven Hundred Twenty Only)"),
+    ("country_of_origin", "India", 0.96, "COUNTRY OF ORIGIN India"),
+]
+
+_T1_BL_FIELDS = [
+    ("bl_number", "MAEU-TEST-002", 0.97, "B/L No. MAEU-TEST-002"),
+    ("carrier", "Maersk A/S", 0.93, "CARRIER: Maersk A/S as Carrier."),
+    ("shipper", "Sunrise Agro Exports Pvt Ltd", 0.95, "SHIPPER Sunrise Agro Exports Pvt Ltd"),
+    ("consignee", "Sunpeak Foods B.V.", 0.94, "CONSIGNEE Sunpeak Foods B.V."),
+    ("origin_port", "Nhava Sheva, India", 0.95, "PORT OF LOADING Nhava Sheva, India"),
+    ("destination_port", "Rotterdam, Netherlands", 0.95, "PORT OF DISCHARGE Rotterdam, Netherlands"),
+    ("vessel_name", "MAERSK CHENNAI / 226W", 0.92, "VESSEL/VOYAGE MAERSK CHENNAI/226W"),
+    ("container_numbers", "MRKU1234567, MRKU7654321", 0.89,
+     "MRKU1234567/40HC Seal: ML123456, MRKU7654321/40HC Seal: ML765432"),
+    ("goods_description", "Indian Basmati Rice, 5% Broken, packed in 25 kg PP bags", 0.93,
+     "INDIAN BASMATI RICE, 5% BROKEN, packed in 25 KG PP BAGS, CROP YEAR 2025-26"),
+    ("hs_code", "1006.30", 0.91, "HS CODE: 1006.30."),
+    ("gross_weight_kg", "18720.00", 0.90, "TOTAL Gross Weight 18,720.00 KGS"),
+    ("net_weight_kg", "18000.00", 0.90, "TOTAL Net Weight 18,000.00 KGS"),
+    ("package_count", "720", 0.90, "TOTAL Packages 720 BAGS"),
+    ("country_of_origin", "India", 0.90, "COUNTRY OF ORIGIN: INDIA"),
+]
+
+_T2_BL_FIELDS = [
+    ("bl_number", "MAEU-TEST-001", 0.97, "B/L No. MAEU-TEST-001"),
+    ("carrier", "Maersk A/S", 0.94, "CARRIER Maersk A/S as Carrier"),
+    ("shipper", "Sunrise Agro Exports Pvt Ltd", 0.95, "SHIPPER Sunrise Agro Exports Pvt Ltd"),
+    ("consignee", "Sunpeak Foods B.V.", 0.94, "CONSIGNEE Sunpeak Foods B.V."),
+    ("origin_port", "Nhava Sheva, India", 0.95, "PORT OF LOADING Nhava Sheva, India"),
+    ("destination_port", "Rotterdam, Netherlands", 0.95, "PORT OF DISCHARGE Rotterdam, Netherlands"),
+    ("vessel_name", "MAERSK CHENNAI / 226W", 0.91, "VESSEL/VOYAGE MAERSK CHENNAI/ 226W"),
+    ("container_numbers", "MRKU1234567", 0.90, "MRKU1234567/40HC Seal: ML123456"),
+    ("goods_description", "Indian Basmati Rice, 5% Broken, in 25 kg PP bags", 0.92,
+     "INDIAN BASMATI RICE 5% BROKEN IN 25 KG PP BAGS CROP YEAR 2025-26"),
+    # The deliberate error this scenario exists for: clearly printed, confidently
+    # read, and WRONG against the customer rule (1006.30). A confident mismatch.
+    ("hs_code", "1006.40", 0.95, "HS CODE: 1006.40"),
+    ("gross_weight_kg", "13000.00", 0.91, "GROSS WEIGHT 13,000.00 KGS"),
+    ("net_weight_kg", "12500.00", 0.90, "Net Weight: 12,500.00 KGS"),
+    ("package_count", "500", 0.91, "500 BAGS"),
+]
+
+_T2_INVOICE_FIELDS = [
+    ("invoice_number", "INV-TEST-001", 0.96, "Invoice No.: INV-TEST-001"),
+    ("invoice_date", "2026-06-22", 0.96, "Date: 22-Jun-2026"),
+    ("shipper", "Sunrise Agro Exports Pvt Ltd", 0.96, "EXPORTER Sunrise Agro Exports Pvt Ltd"),
+    ("consignee", "Sunpeak Foods BV", 0.95, "CONSIGNEE Sunpeak Foods BV"),
+    ("origin_port", "Nhava Sheva (INNSA)", 0.94, "PORT OF LOADING: Nhava Sheva (INNSA)"),
+    ("destination_port", "Rotterdam (NLRTM)", 0.94, "PORT OF DISCHARGE: Rotterdam (NLRTM)"),
+    ("incoterm", "CIF", 0.96, "TERMS OF DELIVERY: CIF Rotterdam"),
+    ("goods_description", "Indian Basmati Rice, 5% Broken, packed in 25 kg PP bags", 0.93,
+     "Indian Basmati Rice, 5% Broken, packed in 25 kg PP bags"),
+    ("hs_code", "1006.30", 0.94, "HS CODE 1006.30"),
+    ("currency", "USD", 0.97, "CURRENCY: USD"),
+    ("total_amount", "44640.00", 0.95, "TOTAL INVOICE VALUE (CIF): USD 44,640.00"),
+    ("gross_weight_kg", "18720.00", 0.92, "Gross Weight: 18,720.00 KGS"),
+    ("net_weight_kg", "18000.00", 0.92, "Net Weight: 18,000.00 KGS"),
+    ("package_count", "720", 0.92, "Total Packages: 720 BAGS (Seven Hundred Twenty Only)"),
+    ("country_of_origin", "India", 0.95, "COUNTRY OF ORIGIN India"),
+]
+
+_T3_BL_FIELDS = [
+    ("bl_number", "MAEU-TEST-002", 0.96, "BILL OF LADING NUMBER MAEU-TEST-002"),
+    # No carrier name is printed anywhere on this stripped-down B/L — a required
+    # field that is genuinely absent. The correct answer is empty, not a guess.
+    ("shipper", "Sunrise Agro Exports Pvt Ltd", 0.95, "SHIPPER Sunrise Agro Exports Pvt Ltd"),
+    ("consignee", "Sunpeak Foods B.V.", 0.94, "CONSIGNEE Sunpeak Foods B.V."),
+    ("origin_port", "Mundra, India", 0.95, "PORT OF LOADING Mundra, India"),
+    ("destination_port", "Rotterdam, Netherlands", 0.95, "PORT OF DISCHARGE Rotterdam, Netherlands"),
+    ("vessel_name", "MAERSK CHENNAI / 226W", 0.91, "VESSEL / VOYAGE MAERSK CHENNAI/226W"),
+    ("goods_description", "Indian Basmati Rice 5% Broken", 0.92,
+     "600 BAGS INDIAN BASMATI RICE 5% BROKEN"),
+    ("hs_code", "1006.40", 0.93, "HS Code: 1006.40"),
+    ("gross_weight_kg", "15600.00", 0.90, "GROSS WEIGHT 15,600.00 KGS"),
+    ("net_weight_kg", "15000.00", 0.90, "NET WEIGHT 15,000.00 KGS"),
+    ("package_count", "600", 0.89, "600 BAGS"),
+]
+
+_T3_INVOICE_FIELDS = [
+    ("invoice_number", "INV-TEST-002", 0.97, "Invoice Number: INV-TEST-002"),
+    # Non-standard date format on the document -> honest low confidence.
+    ("invoice_date", "2026-07-26", 0.55, "Date: July 26, 2026"),
+    ("shipper", "Sunrise Agro Exports Pvt Ltd", 0.95, "EXPORTER Sunrise Agro Exports Pvt Ltd"),
+    ("consignee", "Sunpeak Foods BV", 0.94, "CONSIGNEE Sunpeak Foods BV"),
+    # origin_port, destination_port, currency and total_amount are simply not on
+    # this document — the incomplete-info scenario. Empty is the honest answer.
+    ("incoterm", "CIF", 0.93, "TERMS OF DELIVERY CIF Rotterdam"),
+    ("goods_description", "Indian Basmati Rice, 5% Broken", 0.92,
+     "Indian Basmati Rice, 5% Broken"),
+    ("hs_code", "1006.30", 0.92, "HS CODE 1006.30"),
+    ("gross_weight_kg", "15600.00", 0.90, "GROSS WT (KGS) 15,600.00"),
+    ("net_weight_kg", "15000.00", 0.90, "NET WT (KGS) 15,000.00"),
+    ("package_count", "600", 0.90, "600 BAGS"),
+    ("country_of_origin", "India", 0.70, "The goods are of Indian origin."),
+]
+
+# Ordered: first entry whose keywords all appear in the filename wins, so the
+# scenario-specific recordings match before the generic sample_docs fallbacks.
+_RECORDED: list[tuple[tuple[str, ...], str, list, float]] = [
+    (("happy", "invoice"), "commercial_invoice", _T1_INVOICE_FIELDS, 0.97),
+    (("happy",), "bill_of_lading", _T1_BL_FIELDS, 0.96),
+    (("hsn", "invoice"), "commercial_invoice", _T2_INVOICE_FIELDS, 0.97),
+    (("hsn",), "bill_of_lading", _T2_BL_FIELDS, 0.96),
+    (("incomplete", "invoice"), "commercial_invoice", _T3_INVOICE_FIELDS, 0.95),
+    (("incomplete",), "bill_of_lading", _T3_BL_FIELDS, 0.94),
+    (("invoice",), "commercial_invoice", _INVOICE_FIELDS, 0.97),
+    (("lading",), "bill_of_lading", _BL_FIELDS, 0.96),
+]
+
+
 def vision_extract(filename: str, doc_id: str):
     from agents.vision_agent import FIELDS_BY_TYPE, VisionResult, verify_fields
 
     lowered = filename.lower()
-    if "invoice" in lowered:
-        doc_type, recorded, type_conf = "commercial_invoice", _INVOICE_FIELDS, 0.97
-    elif "lading" in lowered or lowered.startswith("bl") or "_bl" in lowered:
-        doc_type, recorded, type_conf = "bill_of_lading", _BL_FIELDS, 0.96
+    matched = next(
+        (entry for entry in _RECORDED if all(k in lowered for k in entry[0])), None
+    )
+    if matched is not None:
+        _keys, doc_type, recorded, type_conf = matched
     else:
         return VisionResult(
             doc_id=doc_id,
@@ -258,9 +422,9 @@ def vision_extract(filename: str, doc_id: str):
             demo_mode=True,
             failed=True,
             error=(
-                f"{DEMO_BANNER} Demo mode can only replay the two documents in "
-                "/sample_docs (filenames containing 'invoice' or 'lading'). Add a "
-                "Gemini API key to extract arbitrary documents."
+                f"{DEMO_BANNER} Demo mode can only replay the bundled documents in "
+                "/sample_docs and /Testdocs (T1 happy path, T2 HSN mismatch, "
+                "T3 incomplete). Add a Gemini API key to extract arbitrary documents."
             ),
         )
 

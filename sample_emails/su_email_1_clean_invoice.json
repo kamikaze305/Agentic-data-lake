@@ -1,0 +1,8 @@
+{
+  "from": "rahul.mehta@sunriseagro.example",
+  "to": "cg-desk@gocomet.example",
+  "sent_at": "2026-08-02T09:12:00+05:30",
+  "subject": "Shipment PO-SUNP-4471 — Commercial Invoice for Sunpeak Foods (Rotterdam)",
+  "body": "Dear CG team,\n\nPlease find attached the commercial invoice for the Basmati rice shipment to Sunpeak Foods BV, Rotterdam (PO-SUNP-4471, vessel MAERSK CHENNAI/226W).\n\nKindly confirm so we can proceed with the courier of originals.\n\nRegards,\nRahul Mehta\nDocumentation, Sunrise Agro Exports Pvt Ltd",
+  "attachments": ["Testdocs/T1 Invoice Happy path.JPEG"]
+}
