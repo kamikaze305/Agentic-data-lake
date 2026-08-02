@@ -283,4 +283,4 @@ if __name__ == "__main__":
     from agents.db import ensure_db
 
     ensure_db()
-    print(f"Seeded {seed_operational_data()} shipments into data/gocomet.db")
+    print(f"Seeded {seed_operational_data()} shipments into data/datalake.db")

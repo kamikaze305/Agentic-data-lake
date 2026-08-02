@@ -1,6 +1,6 @@
 # PRD — Agentic Data Lake for Trade Operations
 
-**Part 1 · GoComet DAW** · Swapnil · 2026-07-26
+**Part 1 · Agentic Data Lake** · Swapnil · 2026-07-26
 **Status:** POC shipped and running (`README.md` → 5-minute demo path). This document is the reasoning behind it.
 
 ---

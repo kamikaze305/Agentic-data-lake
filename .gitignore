@@ -1,10 +1,18 @@
+# Secrets — never commit. `.env.example` is the only env file that ships.
 .env
+.env.*
+!.env.example
+*.key
+*.pem
+.streamlit/secrets.toml
+
 __pycache__/
 *.pyc
 .venv/
 venv/
-data/gocomet.db
-.streamlit/secrets.toml
+
+# Local seeded database — rebuilds itself from data/seed.py on first run.
+data/*.db
 
 # Internal strategy / planning notes — not part of the deliverable.
 Assignment.md

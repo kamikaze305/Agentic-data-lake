@@ -436,7 +436,7 @@ def build() -> None:
              "You almost certainly re-ran an already-processed email. Clear the inbox first "
              "(see the first row)."],
             ["I want a completely fresh start",
-             "Delete the file data/gocomet.db. It rebuilds itself the next time you start "
+             "Delete the file data/datalake.db. It rebuilds itself the next time you start "
              "the app."],
         ],
         [2.2, 4.4],

@@ -1,6 +1,6 @@
 # Part 2 demo script — 2 minutes
 
-> Audience: a GoComet evaluator who may not have seen Part 1 run.
+> Audience: an evaluator who may not have seen Part 1 run.
 > Open `streamlit run app.py` on the **📬 Verify (Part 2)** tab before starting.
 
 ---

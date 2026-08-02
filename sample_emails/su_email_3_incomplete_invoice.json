@@ -1,6 +1,6 @@
 {
   "from": "dispatch@sunriseagro.example",
-  "to": "cg-desk@gocomet.example",
+  "to": "cg-desk@cg.example",
   "sent_at": "2026-08-02T15:03:00+05:30",
   "subject": "Invoice INV-TEST-002 — Mundra shipment docs",
   "body": "Hi team,\n\nSending the invoice for the second rice lot. Dispatch is done from our side, let us know if anything else is needed.\n\nThanks,\nDispatch Desk\nSunrise Agro Exports Pvt Ltd",

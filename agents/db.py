@@ -16,7 +16,7 @@ from typing import Any
 
 import pandas as pd
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "gocomet.db"
+DB_PATH = Path(__file__).resolve().parent.parent / "data" / "datalake.db"
 
 # --------------------------------------------------------------------------------------
 # Connections

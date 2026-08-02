@@ -511,7 +511,7 @@ def cg_send(verification_id: str, final_subject: str, final_body: str) -> dict[s
     to_addr = (record.get("email") or {}).get("from_addr") or "supplier"
     outbox_file = config.cg_outbox() / f"{verification_id}_reply.txt"
     outbox_file.write_text(
-        f"To: {to_addr}\nFrom: cg-desk@gocomet.example\n"
+        f"To: {to_addr}\nFrom: cg-desk@cg.example\n"
         f"Subject: {final_subject}\nSent-by: CG validator (human)\n"
         f"Edited-before-send: {'yes' if edited else 'no'}\n\n{final_body}\n",
         encoding="utf-8",

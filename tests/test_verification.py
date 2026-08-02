@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ["FORCE_DEMO_MODE"] = "true"
-_TMP = tempfile.mkdtemp(prefix="gocomet_p2_")
+_TMP = tempfile.mkdtemp(prefix="datalake_p2_")
 os.environ["SU_INBOX"] = str(Path(_TMP) / "su_inbox")
 os.environ["CG_OUTBOX"] = str(Path(_TMP) / "cg_outbox")
 

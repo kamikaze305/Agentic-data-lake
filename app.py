@@ -1,4 +1,4 @@
-"""GoComet Agentic Data Lake — Part 1 + Part 2 POC.
+"""Agentic Data Lake — Part 1 + Part 2 POC.
 
 Part 1
     Flow A  Ask a question of the shipment data lake.
@@ -28,7 +28,7 @@ from agents import analytics_agent, config, db, verification_agent, vision_agent
 from agents.llm import DEFAULT_MODEL, demo_mode
 from agents.vision_agent import HIGH, MEDIUM
 
-st.set_page_config(page_title="GoComet Agentic Data Lake", page_icon="🚢", layout="wide")
+st.set_page_config(page_title="Agentic Data Lake", page_icon="🚢", layout="wide")
 
 SAMPLE_QUESTIONS = [
     "Which destination port had the most delayed shipments in the last 6 months?",
@@ -93,7 +93,7 @@ def confidence_badge(value: float | None) -> str:
 # --------------------------------------------------------------------------------------
 
 with st.sidebar:
-    st.markdown("### 🚢 GoComet Agentic Data Lake")
+    st.markdown("### 🚢 Agentic Data Lake")
     st.caption(
         "Part 1 · analytics + vision extraction — Part 2 · SU→CG document "
         "verification. One agentic system, one store."

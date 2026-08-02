@@ -1,4 +1,4 @@
-# GoComet Agentic Data Lake — Part 1 + Part 2 POC
+# Agentic Data Lake — Part 1 + Part 2 POC
 
 Ask a logistics data lake questions in plain English. Drop in a trade document and
 have its fields extracted, reviewed and stored. Then ask questions about the data
@@ -248,5 +248,5 @@ demo_script.md                Part 1 walkthrough · demo_script_part2.md — Par
 | `streamlit: command not found` | `python -m streamlit run app.py` |
 | Sidebar says DEMO MODE with a key set | Key goes in `.env` (not `.env.example`); check `FORCE_DEMO_MODE=false` |
 | `429` / quota errors from Gemini | Free tier rate limit — wait a minute, or unset the key to fall back to demo mode |
-| Want a clean slate | Delete `data/gocomet.db`; it reseeds on next run |
+| Want a clean slate | Delete `data/datalake.db`; it reseeds on next run |
 | Sample documents missing | `python tools/make_sample_docs.py` |
