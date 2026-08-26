@@ -97,6 +97,7 @@ for real).
 | # | Do this | What to look at |
 |---|---------|-----------------|
 | 1 | **📬 Verify (Part 2)** tab → pick `su_email_2_hs_mismatch_bl.json` → **✉️ Simulate this SU email arriving** | The trigger fires: extract → compare → flag → draft, and the email appears in **Incoming** with a verdict. |
+| 1b | Look at **📋 Pending queue**, above Incoming | Count awaiting CG review, oldest wait time, and SLA breaches — the "nobody can see how many documents are pending" pain, answered without a query. |
 | 2 | **Verification result** | ❌ 1 of 8 checks needs attention. Field-by-field verdicts with found vs required, confidence, and the quoted evidence. |
 | 3 | **Discrepancy detail** → `hs_code` | Found **1006.40**, customer requires **1006.30** — read at 95% confidence, so it's a confident mismatch, not a guess. |
 | 4 | **Draft reply** | The amendment email lists field / found / expected — rendered from the check table, so it cannot claim anything the checks didn't record. Edit it if you like. |
@@ -177,6 +178,12 @@ join it to `shipments` on `bl_number` or `invoice_number`.
 - Every verification is recorded the moment it happens in `verifications` /
   `verification_checks` / `su_emails`, exposed to the analytics agent via
   `v_verifications` — including `turnaround_minutes`, the north-star metric.
+- **Pending queue** (Iteration 2a, first slice) — the Verify tab's *Pending queue*
+  panel answers "how many documents are pending?" without a query: count awaiting
+  CG review, oldest wait time, and SLA breaches (> 60 min by default,
+  `QUEUE_SLA_MINUTES` in `app.py`), plus an oldest-pending-first sort on the
+  Incoming table. No schema change — it's the first UI reading of data
+  `v_verifications` already recorded.
 
 ---
 
