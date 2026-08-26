@@ -53,6 +53,20 @@ STATUS_BADGE = {
     "amendment_sent": "✉️ amendment sent",
 }
 
+# Iteration 2 (PRD.md §7a): "nobody can see how many documents are pending."
+# The data has always been in v_verifications; this is just the first UI on top of it.
+QUEUE_SLA_MINUTES = 60
+
+
+def _format_age(minutes: float | None) -> str:
+    if minutes is None or pd.isna(minutes):
+        return "—"
+    minutes = max(0.0, minutes)
+    if minutes < 60:
+        return f"{minutes:.0f}m"
+    hours, rem = divmod(minutes, 60)
+    return f"{hours:.0f}h {rem:.0f}m"
+
 
 # --------------------------------------------------------------------------------------
 # Setup
@@ -316,6 +330,40 @@ with tab_verify:
 
     queue = db.list_verifications()
 
+    # ---- Queue visibility (Iteration 2a) ----------------------------------------------
+    if not queue.empty:
+        now = pd.Timestamp.now(tz="UTC")
+        received = pd.to_datetime(queue["received_at"], utc=True)
+        queue = queue.assign(age_minutes=(now - received).dt.total_seconds() / 60)
+        pending = queue[queue["status"] == "awaiting_cg"]
+        breaches = pending[pending["age_minutes"] > QUEUE_SLA_MINUTES]
+
+        st.markdown("##### 📋 Pending queue")
+        st.caption(
+            "The pain named in the PRD — *\"nobody can see how many documents are "
+            "pending.\"* This reads straight off the verification audit trail; no "
+            "separate tracking needed."
+        )
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Awaiting CG review", len(pending))
+        m2.metric(
+            "Oldest waiting",
+            _format_age(pending["age_minutes"].max()) if not pending.empty else "—",
+        )
+        m3.metric(f"SLA breaches (> {QUEUE_SLA_MINUTES}m)", len(breaches))
+        if not breaches.empty:
+            oldest_first = breaches.sort_values("age_minutes", ascending=False)
+            st.warning(
+                f"⚠️ {len(breaches)} document(s) past the {QUEUE_SLA_MINUTES}-minute "
+                "review SLA: "
+                + ", ".join(
+                    f"{row.filename} ({_format_age(row.age_minutes)})"
+                    for row in oldest_first.itertuples()
+                )
+            )
+        elif not pending.empty:
+            st.success(f"All {len(pending)} pending document(s) are within SLA.")
+
     # ---- State 1 · Incoming ----------------------------------------------------------
     st.markdown("##### 📨 Incoming")
     if queue.empty:
@@ -325,25 +373,46 @@ with tab_verify:
             "verify it while you watch."
         )
     else:
-        incoming = queue.assign(
-            status_badge=queue["status"].map(STATUS_BADGE).fillna(queue["status"]),
-            verdict_badge=queue["verdict"].map(
+        oldest_pending_first = st.checkbox(
+            "Sort by queue priority (oldest pending first)",
+            value=not queue[queue["status"] == "awaiting_cg"].empty,
+            help="Off: most recently received first. On: whatever's waited longest "
+                 "for CG review floats to the top, same as a real work queue.",
+        )
+        if oldest_pending_first:
+            sorted_queue = queue.assign(
+                _pending_first=(queue["status"] != "awaiting_cg").astype(int)
+            ).sort_values(
+                by=["_pending_first", "age_minutes"], ascending=[True, False], kind="stable"
+            )
+        else:
+            sorted_queue = queue
+        # Pending rows show live wait time; actioned rows show final turnaround —
+        # age_minutes keeps ticking upward after send, which isn't what "took" means.
+        display_minutes = sorted_queue["age_minutes"].where(
+            sorted_queue["status"] == "awaiting_cg", sorted_queue["turnaround_minutes"]
+        )
+        incoming = sorted_queue.assign(
+            status_badge=sorted_queue["status"].map(STATUS_BADGE).fillna(sorted_queue["status"]),
+            verdict_badge=sorted_queue["verdict"].map(
                 {"clean": "✅ clean", "amend": "❌ needs amendment", "failed": "🚨 failed"}
             ),
+            age_badge=display_minutes.map(_format_age),
         )[
             ["verification_id", "received_at", "from_addr", "subject", "filename",
-             "verdict_badge", "status_badge"]
+             "verdict_badge", "status_badge", "age_badge"]
         ].rename(
             columns={
                 "verification_id": "ID", "received_at": "Received", "from_addr": "From",
                 "subject": "Subject", "filename": "Attachment",
                 "verdict_badge": "Agent verdict", "status_badge": "Status",
+                "age_badge": "Waiting / took",
             }
         )
         st.dataframe(incoming, width="stretch", hide_index=True,
                      height=45 + 35 * min(len(incoming), 5))
 
-        options = queue["verification_id"].tolist()
+        options = sorted_queue["verification_id"].tolist()
         default_index = (
             options.index(st.session_state.selected_verification)
             if st.session_state.selected_verification in options
