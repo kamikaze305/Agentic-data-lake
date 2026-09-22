@@ -4,6 +4,12 @@ Everything that talks to Gemini goes through `call_json`. That gives one place t
 enforce the three things the POC depends on: deterministic settings, JSON that is
 actually parseable, and a loud, typed failure when the model is unavailable —
 never a silent fallback to a guess.
+
+It also walks a pool of models. Free-tier quota is per model, and the `*-latest`
+aliases are capped at roughly 20 requests a day — a live demo that relies on one
+model dies at request 21. A quota hit (429) moves to the next model; so does a
+retired model name (404), which is what breaks a fresh clone months later. The
+alias sits last in the pool so the app always has something current to fall to.
 """
 
 from __future__ import annotations
@@ -20,9 +26,36 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-# gemini-flash-latest auto-tracks the current stable Flash. Pinned model names
-# (e.g. gemini-2.5-flash) get retired for new API keys, which breaks a fresh clone.
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL") or "gemini-flash-latest"
+# Pinned models first — each carries its own free-tier quota — the auto-tracking
+# alias last. Override the whole pool with GEMINI_MODELS, or put one model at the
+# front with GEMINI_MODEL.
+DEFAULT_POOL = [
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-latest",
+]
+
+# A model that just returned 429 is skipped for this long, so every call after a
+# quota hit does not pay for the same refusal again.
+QUOTA_COOLDOWN_SECONDS = 60
+
+_SLEEP = time.sleep  # replaced in tests so retries do not actually wait
+_cooldown_until: dict[str, float] = {}
+
+
+def model_pool() -> list[str]:
+    """The models to try, in order. Read from the environment on every call."""
+    override = [m.strip() for m in (os.getenv("GEMINI_MODELS") or "").split(",") if m.strip()]
+    if override:
+        return list(dict.fromkeys(override))
+    primary = (os.getenv("GEMINI_MODEL") or "").strip()
+    return list(dict.fromkeys(([primary] if primary else []) + DEFAULT_POOL))
+
+
+# The model a call starts with — what the UI shows as "LIVE · model …".
+DEFAULT_MODEL = model_pool()[0]
 
 
 class LLMUnavailable(RuntimeError):
@@ -97,6 +130,34 @@ def _extract_json(text: str) -> dict[str, Any]:
     raise LLMUnavailable(f"Model did not return valid JSON. First 400 chars: {text[:400]}")
 
 
+def _error_kind(exc: Exception) -> str:
+    """Sort a failed call into what to do next.
+
+    quota    429 / RESOURCE_EXHAUSTED — this model is spent; try the next one.
+    retired  404 / NOT_FOUND — the name no longer exists; try the next one.
+    fatal    any other 4xx (bad key, bad request) — another model will not help.
+    transient everything else (5xx, network) — retry the same model, then move on.
+    """
+    code = getattr(exc, "code", None)
+    text = str(exc)
+    if code == 429 or "RESOURCE_EXHAUSTED" in text:
+        return "quota"
+    if code == 404 or "NOT_FOUND" in text:
+        return "retired"
+    if isinstance(code, int) and 400 <= code < 500:
+        return "fatal"
+    return "transient"
+
+
+def _ordered_pool(model: str | None) -> list[str]:
+    """The pool with models still cooling down after a quota hit moved to the back."""
+    pool = [model] if model else model_pool()
+    now = time.time()
+    ready = [m for m in pool if _cooldown_until.get(m, 0) <= now]
+    cooling = [m for m in pool if _cooldown_until.get(m, 0) > now]
+    return ready + cooling
+
+
 def call_json(
     prompt: str,
     *,
@@ -107,16 +168,17 @@ def call_json(
     temperature: float = 0.0,
     max_attempts: int = 3,
 ) -> LLMResult:
-    """Call Gemini and return parsed JSON, retrying only on transport-level errors.
+    """Call Gemini and return parsed JSON, walking the model pool on quota errors.
 
     `file_bytes` + `mime_type` attaches a PDF or image inline — that is how the
     vision agent reads documents. PDFs go to the model directly, so there is no
     poppler/ImageMagick dependency to break on a fresh machine.
+
+    `max_attempts` is per model and applies to transient errors only.
     """
     from google.genai import types
 
     client = _get_client()
-    model_name = model or DEFAULT_MODEL
 
     parts: list[Any] = []
     if file_bytes is not None:
@@ -133,35 +195,53 @@ def call_json(
 
     started = time.time()
     last_error: Exception | None = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role="user", parts=parts)],
-                config=config,
-            )
-            text = response.text or ""
-            data = _extract_json(text)
-            usage = {}
-            meta = getattr(response, "usage_metadata", None)
-            if meta is not None:
-                usage = {
-                    "input_tokens": getattr(meta, "prompt_token_count", None),
-                    "output_tokens": getattr(meta, "candidates_token_count", None),
-                }
-            return LLMResult(
-                data=data,
-                raw_text=text,
-                model=model_name,
-                latency_ms=int((time.time() - started) * 1000),
-                attempts=attempt,
-                usage=usage,
-            )
-        except LLMUnavailable:
-            raise
-        except Exception as exc:  # network / quota / transient server errors
-            last_error = exc
-            if attempt < max_attempts:
-                time.sleep(1.5 * attempt)
+    tried: list[str] = []
+    calls = 0
+    for model_name in _ordered_pool(model):
+        for attempt in range(1, max_attempts + 1):
+            calls += 1
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[types.Content(role="user", parts=parts)],
+                    config=config,
+                )
+                text = response.text or ""
+                data = _extract_json(text)
+                usage = {}
+                meta = getattr(response, "usage_metadata", None)
+                if meta is not None:
+                    usage = {
+                        "input_tokens": getattr(meta, "prompt_token_count", None),
+                        "output_tokens": getattr(meta, "candidates_token_count", None),
+                    }
+                return LLMResult(
+                    data=data,
+                    raw_text=text,
+                    model=model_name,
+                    latency_ms=int((time.time() - started) * 1000),
+                    attempts=calls,
+                    usage=usage,
+                )
+            except LLMUnavailable:
+                raise
+            except Exception as exc:
+                last_error = exc
+                kind = _error_kind(exc)
+                if kind == "fatal":
+                    raise LLMUnavailable(f"Gemini rejected the call ({model_name}): {exc}") from exc
+                if kind == "quota":
+                    _cooldown_until[model_name] = time.time() + QUOTA_COOLDOWN_SECONDS
+                if kind in ("quota", "retired"):
+                    tried.append(f"{model_name} ({kind})")
+                    break
+                if attempt < max_attempts:
+                    _SLEEP(1.5 * attempt)
+                else:
+                    tried.append(f"{model_name} (failed {max_attempts}x)")
 
-    raise LLMUnavailable(f"Gemini call failed after {max_attempts} attempts: {last_error}")
+    raise LLMUnavailable(
+        f"Every Gemini model failed: {', '.join(tried)}. Last error: {last_error}. "
+        "Wait for the quota to reset, list more models in GEMINI_MODELS, "
+        "or set FORCE_DEMO_MODE=true."
+    )

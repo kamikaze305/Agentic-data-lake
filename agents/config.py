@@ -44,7 +44,7 @@ def list_inbox_documents() -> list[Path]:
 
 
 # --------------------------------------------------------------------------------------
-# Part 2 — the simulated SU mailbox and the CG outbox
+# Verification loop — the simulated SU mailbox and the CG outbox
 # --------------------------------------------------------------------------------------
 
 # The watched folder that stands in for the CG team's shared mailbox. An SU
@@ -74,3 +74,17 @@ def su_inbox() -> Path:
 def cg_outbox() -> Path:
     """Absolute path to the folder CG's sent replies are written into."""
     return _resolved_dir("CG_OUTBOX", DEFAULT_CG_OUTBOX)
+
+
+# How long a document may wait for CG review before the pending queue calls it an
+# SLA breach. Teams set this differently, so it lives in .env, not in the UI code.
+DEFAULT_QUEUE_SLA_MINUTES = 60
+
+
+def queue_sla_minutes() -> int:
+    """Review SLA in minutes from QUEUE_SLA_MINUTES; the default if unset or unreadable."""
+    try:
+        value = int((os.getenv("QUEUE_SLA_MINUTES") or "").strip())
+    except ValueError:
+        return DEFAULT_QUEUE_SLA_MINUTES
+    return value if value > 0 else DEFAULT_QUEUE_SLA_MINUTES
