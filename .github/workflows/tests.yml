@@ -1,0 +1,27 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      # No key in CI on purpose: every test runs in demo mode or against a fake client.
+      FORCE_DEMO_MODE: "true"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Analytics, extraction and linkage (plus a headless UI render)
+        run: python tests/test_end_to_end.py
+      - name: Verification loop
+        run: python tests/test_verification.py
+      - name: Model pool and failure handling
+        run: python tests/test_llm.py
