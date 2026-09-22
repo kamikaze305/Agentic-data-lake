@@ -1,6 +1,6 @@
-# PRD — SU → CG Trade Document Verification Agent (Part 2)
+# PRD — SU → CG Trade Document Verification Agent
 
-*One page. Builds on the Part 1 POC: same vision extraction, same store, same analytics. v1.0 · 2026-08-02*
+*One page. Builds on the analytics & extraction POC ([PRD.md](PRD.md)): same vision extraction, same store, same analytics. v1.0 · 2026-08-02*
 
 ---
 
@@ -23,7 +23,7 @@ Every shipment's documents are validated by a CG (Control Group) team member who
 
 ```
 👤 SU emails the document  →  agent detects it (trigger)  →  agent extracts fields
-(Part 1 vision agent)  →  agent compares vs customer rule set (deterministic)  →
+(Flow B vision agent)  →  agent compares vs customer rule set (deterministic)  →
 agent flags: match / mismatch / uncertain / missing  →  agent drafts the reply  →
 👤 CG opens the verification result  →  👤 CG inspects flagged fields (found vs
 expected, with quoted evidence)  →  👤 CG edits the draft if needed  →  👤 CG SENDS
@@ -42,4 +42,4 @@ The three-party structure is untouched — SU sends, CG validates, the customer 
 
 ---
 
-*Out of scope for this iteration (deliberately): real email integration (trigger is a watched folder, per brief), multi-customer rule packs, rule learning from amendment history, cross-document consistency (invoice vs B/L) — the last two are Iteration 2 in the Part 1 PRD.*
+*Out of scope for this iteration (deliberately): real email integration (trigger is a watched folder), multi-customer rule packs, rule learning from amendment history, cross-document consistency (invoice vs B/L) — the last two are Iteration 2 in [PRD.md](PRD.md).*

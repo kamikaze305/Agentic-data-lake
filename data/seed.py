@@ -2,8 +2,8 @@
 
 Synthetic but shaped like the real thing — seasonal ocean delays, one carrier that
 under-performs its on-time target, a customs-hold cluster on a particular HS code,
-and `document_amendment_cycles`, the column that makes the Part 2 problem visible
-in Part 1's own analytics.
+and `document_amendment_cycles`, the column that makes the verification problem
+visible in the analytics layer.
 
 Deterministic (fixed seed) so the demo tells the same story every time it runs.
 """
@@ -124,7 +124,7 @@ CREATE INDEX idx_shipments_customer ON shipments(customer_code);
 
 # The shipment that the two sample documents in /sample_docs belong to.
 # Its gross weight deliberately disagrees with the Commercial Invoice by 240 kg —
-# that single mismatch is the thread Part 2 pulls on.
+# that single mismatch is the thread the verification loop pulls on.
 ANCHOR = {
     "shipment_id": "GC-2026-9001",
     "booking_date": "2026-06-18",
@@ -205,7 +205,7 @@ def _build_rows() -> list[tuple]:
         if customs_hold and status == "Delivered":
             status = "Customs Hold"
 
-        # Document amendment cycles: the Part 2 pain, measurable in Part 1.
+        # Document amendment cycles: the verification pain, measurable in the analytics.
         # Enterprise customers with stricter doc requirements churn more.
         base = {"Enterprise": 1.9, "Mid-Market": 1.3, "SMB": 0.8}[cust[3]]
         cycles = max(0, int(rng.gauss(base + (1.4 if customs_hold else 0), 0.9)))

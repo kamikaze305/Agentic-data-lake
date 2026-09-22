@@ -50,7 +50,7 @@ CURRENCIES = {"USD", "EUR", "GBP", "INR", "SGD", "AED", "CNY", "JPY"}
 
 # Canonical field set. Keeping one vocabulary across document types is what lets
 # `v_trade_documents` be a flat, queryable table in Flow C — and it is the same
-# vocabulary a Part 2 rule set would be written against.
+# vocabulary the verification rule sets are written against.
 FieldSpec = tuple[str, str, bool]  # (name, what to look for, required)
 
 COMMON: list[FieldSpec] = [

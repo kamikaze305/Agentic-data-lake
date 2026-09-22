@@ -1,10 +1,10 @@
-"""Agent V — Part 2, the SU → CG document verification loop.
+"""Agent V — the SU → CG document verification loop.
 
 An SU email lands in a watched folder; a reviewed, ready-to-send reply comes out.
 
     TRIGGER     poll the simulated mailbox. A new envelope (or bare document)
                 activates the agent. Idempotent — an email is processed once.
-    EXTRACTOR   Part 1's vision agent, called unmodified. Perception only.
+    EXTRACTOR   the Flow B vision agent, called unmodified. Perception only.
     COMPARATOR  deterministic checks against the customer's written rule set.
                 No model in this stage: a verdict must be auditable, so it is a
                 rule table, not a judgment call. Per field: match / mismatch /
@@ -18,7 +18,7 @@ in the system is the CG validator's button in the UI, which calls `cg_send`.
 
 Everything is stored the moment it happens (`verifications`,
 `verification_checks`, `su_emails`), which is what makes the queue visible and
-the audit trail queryable via the Part 1 analytics layer.
+the audit trail queryable via the analytics agent.
 """
 
 from __future__ import annotations
@@ -128,7 +128,7 @@ def _bare_document_email(path: Path) -> SUEmail:
 def poll_inbox() -> list[SUEmail]:
     """Return SU emails that have not been seen before, oldest first.
 
-    This is the mocked plumbing the brief allows: in production the same function
+    This is deliberately mocked plumbing: in production the same function
     would be fed by an IMAP/Graph webhook. The logic that matters — new-message
     detection, idempotency, activation — is real.
     """
@@ -392,7 +392,7 @@ def process_attachment(email: SUEmail, attachment: Path) -> VerificationResult:
             "stage": "extractor",
             "status": "ok",
             "detail": (
-                f"Part 1 vision agent: {extraction.doc_type} "
+                f"Vision agent: {extraction.doc_type} "
                 f"({extraction.doc_type_confidence:.0%}), {len(extraction.fields)} fields"
                 + (" — replayed, demo mode" if extraction.demo_mode else "")
             ),

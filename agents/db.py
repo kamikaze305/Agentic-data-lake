@@ -74,10 +74,10 @@ CREATE TABLE IF NOT EXISTS document_fields (
 );
 """
 
-# Part 2 — the SU -> CG verification loop. An email arrives, the agent verifies the
+# The SU -> CG verification loop. An email arrives, the agent verifies the
 # attached document against the customer rule set, CG reviews and sends the reply.
 # Everything is recorded the moment it happens: the queue-visibility and audit-trail
-# pains from the brief become queryable tables on day one.
+# pains become queryable tables on day one.
 VERIFY_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS su_emails (
     email_id     TEXT PRIMARY KEY,
@@ -243,7 +243,7 @@ TABLE_NOTES = {
     "v_trade_documents": "ONE ROW PER UPLOADED DOCUMENT, extracted by the vision agent and confirmed by a human. This is the only place extracted document data lives. Join to shipments on bl_number or invoice_number to compare a document against the shipment record.",
     "documents": "Upload metadata for extracted documents, including rows still pending review.",
     "document_fields": "Field-level extraction detail with per-field confidence and the verbatim evidence snippet.",
-    "v_verifications": "ONE ROW PER VERIFICATION of a supplier document against the customer rule set (Part 2). `status` is 'awaiting_cg' until the CG validator sends the reply, then 'approval_sent' or 'amendment_sent'. `verdict` is the agent's finding: 'clean' or 'amend'. `turnaround_minutes` is email arrival to CG reply — the north-star metric.",
+    "v_verifications": "ONE ROW PER VERIFICATION of a supplier document against the customer rule set. `status` is 'awaiting_cg' until the CG validator sends the reply, then 'approval_sent' or 'amendment_sent'. `verdict` is the agent's finding: 'clean' or 'amend'. `turnaround_minutes` is email arrival to CG reply — the north-star metric.",
     "verification_checks": "Field-level verification detail: rule label, expected vs found, verdict (match/mismatch/uncertain/missing), confidence and evidence.",
     "su_emails": "Simulated supplier (SU) emails that triggered the verification agent.",
 }
@@ -414,7 +414,7 @@ def delete_document(doc_id: str) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Part 2 — SU emails and verifications
+# Verification loop — SU emails and verifications
 # --------------------------------------------------------------------------------------
 
 

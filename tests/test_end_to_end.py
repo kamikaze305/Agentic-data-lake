@@ -145,7 +145,7 @@ def test_sql_guard() -> None:
 
 
 def test_ui_renders() -> None:
-    """Run app.py headlessly. Catches anything that would blow up on the evaluator."""
+    """Run app.py headlessly. Catches anything that would blow up on a fresh clone."""
     print("\nUI · headless render of app.py")
     try:
         from streamlit.testing.v1 import AppTest

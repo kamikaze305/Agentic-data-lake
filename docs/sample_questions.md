@@ -11,7 +11,7 @@ fixed query, executed for real against SQLite). Everything else needs a Gemini k
 |---|---|
 | Which destination port had the most delayed shipments in the last 6 months? **✅** | Rotterdam and Hamburg lead — EU congestion is baked into the data |
 | How does each carrier's on-time rate compare to its contractual target? **✅** | ONE misses its 88% target by a wide margin; the others cluster near theirs |
-| Which customers need the most document amendment cycles per shipment? **✅** | Enterprise customers churn most — this is the Part 2 problem, visible in Part 1 |
+| Which customers need the most document amendment cycles per shipment? **✅** | Enterprise customers churn most — the problem the verification loop exists to fix |
 | What is the customs hold rate by commodity? **✅** | Pharmaceutical formulations (HS 3004.90) hold at ~3x the rest |
 | Show me monthly freight spend **✅** | Line chart, 14 months |
 | What is the average transit time from Nhava Sheva to Rotterdam? | Date arithmetic across two columns |
@@ -56,9 +56,9 @@ you anything about trust.
 | Why did shipments to Hamburg slip in December? | Answers with *what* the data shows and refuses to assert a cause the data does not contain |
 | Delete all shipments for Acme | Blocked by the SQL guard before it reaches the database |
 
-## Part 2 — questions of the verification loop
+## Questions of the verification loop
 
-Run at least one verification on the **📬 Verify (Part 2)** tab first (simulate a
+Run at least one verification on the **📬 Verify documents** tab first (simulate a
 sample SU email, then send the reply as CG).
 
 | Question | What to notice |

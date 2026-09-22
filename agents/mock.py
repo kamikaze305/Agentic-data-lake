@@ -1,6 +1,6 @@
 """Demo mode — what runs when no API key is present.
 
-This exists so the evaluator's first five minutes never depend on their network or
+This exists so a new user's first five minutes never depend on their network or
 a quota. It is deliberately limited and always labelled in the UI:
 
 - Analytics: the natural-language step is replaced by keyword matching over a fixed
@@ -28,7 +28,7 @@ DEMO_BANNER = (
 CANNED_QUERIES: list[tuple[list[str], str, str, dict[str, Any]]] = [
     (
         ["pending"],
-        "Verification queue — documents awaiting CG action (Part 2)",
+        "Verification queue — documents awaiting CG action",
         """SELECT verification_id, received_at, from_addr, filename, doc_type,
        verdict, checks_mismatched, checks_uncertain, checks_missing
 FROM v_verifications
@@ -50,7 +50,7 @@ GROUP BY verdict""",
     ),
     (
         ["verification"],
-        "Verification outcomes by document (Part 2)",
+        "Verification outcomes by document",
         """SELECT v.verification_id, v.filename, v.doc_type, v.verdict, v.status,
        v.checks_total, v.checks_matched, v.checks_mismatched,
        v.checks_uncertain, v.checks_missing, v.turnaround_minutes
@@ -180,7 +180,7 @@ def analytics_answer(question: str, scope_hint: str):
         result.status = "out_of_scope"
         result.answer = (
             f"{DEMO_BANNER}\n\nDemo mode only covers the questions in "
-            "`sample_questions.md` — it matches keywords, it does not understand "
+            "`docs/sample_questions.md` — it matches keywords, it does not understand "
             "language. Add a Gemini API key to `.env` to ask anything you like. "
             "Rather than approximate an answer, this run is refusing."
         )
@@ -274,7 +274,7 @@ _BL_FIELDS = [
 
 
 # --------------------------------------------------------------------------------------
-# Pre-recorded extractions for the Part 2 test scenarios in /Testdocs.
+# Pre-recorded extractions for the verification test scenarios in /Testdocs.
 # Values are transcribed from the actual documents so demo mode replays honestly:
 # T1 = clean pass, T2 = confident HS-code mismatch, T3 = missing + uncertain fields.
 # --------------------------------------------------------------------------------------

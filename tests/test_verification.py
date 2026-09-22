@@ -1,9 +1,9 @@
-"""End-to-end test of the Part 2 verification loop.
+"""End-to-end test of the SU → CG verification loop.
 
 Runs in demo mode against a throwaway inbox/outbox, so it needs no API key and no
 network. Covers the three scenarios the demo stands on (clean / mismatch /
 incomplete), the trust rules (uncertain never approved, agent never sends), the
-CG send path, and the linkage back into the Part 1 analytics layer.
+CG send path, and the linkage back into the analytics layer.
 
     python tests/test_verification.py
 """
@@ -104,7 +104,7 @@ def test_cg_send(clean, mismatch):
 
 
 def test_storage_and_linkage(clean, mismatch, incomplete):
-    print("\nLinkage · Part 2 output is Part 1 queryable")
+    print("\nLinkage · verification output is queryable by the analytics agent")
     conn = db.get_readonly_conn()
     try:
         approved = conn.execute(

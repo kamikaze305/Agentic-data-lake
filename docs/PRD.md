@@ -1,7 +1,7 @@
 # PRD — Agentic Data Lake for Trade Operations
 
-**Part 1 · Agentic Data Lake** · Swapnil · 2026-07-26
-**Status:** POC shipped and running (`README.md` → 5-minute demo path). This document is the reasoning behind it.
+**Analytics & document extraction** · Swapnil · 2026-07-26
+**Status:** POC shipped and running (`README.md` → 5-minute demo path). This document is the reasoning behind it. Its Iteration 1 — supplier-document verification — is built; see [PRD_verification.md](PRD_verification.md).
 
 ---
 
@@ -32,7 +32,7 @@ And LLM tools that fix the first three tend to make trust *worse*. A confident, 
 
 ## 2. Users and jobs to be done
 
-**Primary persona — Meera, Trade Documentation Executive (the validator).** Spends most of the day opening attachments and checking fields against what a customer requires. Knows the rules by memory and by scar tissue; the rules are not written down anywhere. Success for her is a clean document set with no amendment round trips. She is not technical, does not write SQL, and does not trust software that cannot show its work. *She is the same person Part 2 is built for.*
+**Primary persona — Meera, Trade Documentation Executive (the validator).** Spends most of the day opening attachments and checking fields against what a customer requires. Knows the rules by memory and by scar tissue; the rules are not written down anywhere. Success for her is a clean document set with no amendment round trips. She is not technical, does not write SQL, and does not trust software that cannot show its work. *She is the same person the verification agent is built for.*
 
 **Primary persona — Rohan, Logistics Ops Lead (the decision-maker).** Owns lane performance, carrier mix and cost. Needs answers in the middle of a conversation, not two days later. Comfortable reading a table, not writing a query. Judges a tool by whether he can defend its number in front of a customer.
 
@@ -51,7 +51,7 @@ And LLM tools that fix the first three tend to make trust *worse*. A confident, 
 
 ## 3. Product scope
 
-**In scope (built in 24 hours, all running):**
+**In scope (built and running):**
 
 - **A — Agentic analytics.** NL question over 421 shipments × 14 months plus carrier and customer reference data. Answer, the SQL, the result table, a chart, and multi-turn refinement.
 - **B — Vision document agent.** PDF or image in; classification, canonical trade fields with per-field confidence and quoted evidence, deterministic rule checks, human review and correction, then storage.
@@ -63,15 +63,15 @@ And LLM tools that fix the first three tend to make trust *worse*. A confident, 
 |---|---|
 | Multi-page / multi-document sets | One document proves extraction; batching is throughput work, not proof |
 | Vector search / RAG over document text | The value here is *structured fields*, not passage retrieval |
-| OCR fallback for handwriting and low-dpi scans | Real production need; adds a dependency chain that can't be validated in 24h |
+| OCR fallback for handwriting and low-dpi scans | Real production need; adds a dependency chain a POC can't validate |
 | Role-based access, tenant isolation | Necessary for pilot, irrelevant to whether the chain works |
 | Write-back to source systems | The data lake stays read-only downstream. Nothing this POC does is irreversible |
-| Autonomous multi-step planning | The loop is deliberately bounded at two repairs. Unbounded agents fail in ways a 24h demo can't characterise |
+| Autonomous multi-step planning | The loop is deliberately bounded at two repairs. Unbounded agents fail in ways a POC can't characterise |
 | Scheduled / streaming ingestion | Upload is manual and deliberate — *this is the gap Iteration 1 closes* |
 
 **Assumptions.** Documents are digitally generated, not photographed; one customer's field vocabulary is representative enough to model canonically; a validator accepts a review step that takes seconds, not minutes; a free-tier vision model is accurate enough to be worth *reviewing* rather than replacing.
 
-**Constraints.** 24 hours; one API key; the demo must survive an unreliable network on the evaluator's machine — hence a labelled demo mode that replays recorded extraction while still executing real SQL. The seeded dataset is synthetic, shaped to the pain in the brief; every number in §6 is a pilot target, not a result claimed here.
+**Constraints.** One free-tier API key; the demo must survive an unreliable network on a first-time user's machine — hence a labelled demo mode that replays recorded extraction while still executing real SQL. The seeded dataset is synthetic, shaped to the pain described above; every number in §6 is a pilot target, not a result claimed here.
 
 ---
 
@@ -129,9 +129,9 @@ An answer counts only if the user asked it themselves, the verifier confirmed su
 ## 7. Next two iterations
 
 **Iteration 1 (2 weeks) — event-triggered verification against a customer rule set.**
-Today a document enters the system because someone chose to upload it. That is the gap. Next: the agent watches the inbox, and when a supplier emails a document set, it extracts, compares each field against that customer's written rule set, and produces a per-field verdict — matched, mismatched, or **uncertain, which is never treated as approved**. On a clean pass it drafts an approval reply; on issues, an amendment email listing field, found, and expected. **The validator reviews and sends. The agent never sends.** The three-party structure — supplier, validator, customer — does not change; what disappears is the manual reading and typing, not the human. Verified output lands in the same store, so §6's metrics keep working. Everything this needs — extraction, confidence, evidence, the confirmed-only store — shipped in Part 1.
+Today a document enters the system because someone chose to upload it. That is the gap. Next: the agent watches the inbox, and when a supplier emails a document set, it extracts, compares each field against that customer's written rule set, and produces a per-field verdict — matched, mismatched, or **uncertain, which is never treated as approved**. On a clean pass it drafts an approval reply; on issues, an amendment email listing field, found, and expected. **The validator reviews and sends. The agent never sends.** The three-party structure — supplier, validator, customer — does not change; what disappears is the manual reading and typing, not the human. Verified output lands in the same store, so §6's metrics keep working. Everything this needs — extraction, confidence, evidence, the confirmed-only store — already ships in this POC. *Status: built — see [PRD_verification.md](PRD_verification.md).*
 
 *Why this is next and not something else:* the shipped POC already proves the expensive half. The remaining work is a trigger, a rule set, and a drafting step.
 
 **Iteration 2 (4 weeks) — rule learning, queue visibility, and cross-document consistency.**
-Three things the first iteration exposes. **(a) Rules come out of people's heads:** mine the amendment history to propose candidate rules a lead approves — new hires stop erring for weeks. **(b) Nobody can see the queue:** a pending view with age and SLA, plus a full audit trail of every verdict, correction and send. **(c) Documents disagree with each other,** not just with the rules: invoice vs B/L vs packing list consistency checks — precisely the 240 kg gap the Part 1 demo surfaces by hand today. At that point the operating metric shifts to **first-pass approval rate** and **amendment cycles per shipment** — the brief's own numbers (2–4 cycles, 4–24 hours each), and a number a validator's team lead can check on Day 14.
+Three things the first iteration exposes. **(a) Rules come out of people's heads:** mine the amendment history to propose candidate rules a lead approves — new hires stop erring for weeks. **(b) Nobody can see the queue:** a pending view with age and SLA, plus a full audit trail of every verdict, correction and send. **(c) Documents disagree with each other,** not just with the rules: invoice vs B/L vs packing list consistency checks — precisely the 240 kg gap the demo surfaces by hand today. At that point the operating metric shifts to **first-pass approval rate** and **amendment cycles per shipment** — the numbers that define the pain today (2–4 cycles, 4–24 hours each), and a number a validator's team lead can check on Day 14.

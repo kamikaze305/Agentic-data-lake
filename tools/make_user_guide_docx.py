@@ -1,6 +1,6 @@
 """Render the non-technical user guide to a Word document.
 
-    python tools/make_user_guide_docx.py   ->   USER_GUIDE.docx
+    python tools/make_user_guide_docx.py   ->   docs/USER_GUIDE.docx
 
 Written for someone who has never used the app and does not write code: how to
 start it, how to simulate an SU email, what each of the three bundled scenarios
@@ -25,7 +25,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "USER_GUIDE.docx"
+OUT = ROOT / "docs" / "USER_GUIDE.docx"
 
 ACCENT = RGBColor(0x1F, 0x4E, 0x79)
 MUTED = RGBColor(0x5A, 0x5A, 0x5A)
@@ -256,7 +256,7 @@ def build() -> None:
         "python -m streamlit run app.py",
     ])
     para(doc, [("Your browser opens the app automatically. Click the first tab, ", ""),
-               ("📬 Verify (Part 2)", "b"), (". That is the CG desk screen.", "")])
+               ("📬 Verify documents", "b"), (". That is the CG desk screen.", "")])
     callout(doc, [
         ("No API key? It still works. ", "b"),
         ("The app runs in demo mode using recorded readings of the bundled documents, and "
@@ -271,7 +271,7 @@ def build() -> None:
         (". Dropping a file into it is exactly like an email landing.", ""),
     ])
     para(doc, [("You do not have to do that by hand. On the ", ""),
-               ("📬 Verify (Part 2)", "b"), (" tab:", "")])
+               ("📬 Verify documents", "b"), (" tab:", "")])
     bullet(doc, [("Pick one of the three bundled emails from the dropdown", "")])
     bullet(doc, [("Click ", ""), ("✉️ Simulate this SU email arriving", "b")])
     para(doc, [(
